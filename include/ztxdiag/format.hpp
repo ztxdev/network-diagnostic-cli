@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ztxdiag/diagnostics.hpp"
+#include "ztxdiag/http.hpp"
 
 #include <string>
 
@@ -16,6 +17,9 @@ std::string format_tcp_json(const TcpResult& result);
 
 std::string format_environment_text(const EnvironmentResult& result);
 std::string format_environment_json(const EnvironmentResult& result);
+
+std::string format_http_text(const HttpResult& result);
+std::string format_http_json(const HttpResult& result);
 
 std::string format_check_text(
     const DnsResult& dns,
