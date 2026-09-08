@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a reproducible ztxdiag problem
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please remove sensitive hostnames, internal addresses, proxy credentials, tokens, and customer data before posting.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem
+      description: What is wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      placeholder: ztxdiag github.com 443
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Paste non-sensitive output.
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        OS:
+        Compiler / binary source:
+        ztxdiag version:
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true

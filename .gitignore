@@ -1,0 +1,10 @@
+/build/
+/out/
+/install/
+.vscode/
+.idea/
+*.user
+*.suo
+*.VC.db
+.DS_Store
+Thumbs.db
