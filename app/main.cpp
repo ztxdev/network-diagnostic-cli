@@ -1,5 +1,6 @@
 #include "ztxdiag/diagnostics.hpp"
 #include "ztxdiag/format.hpp"
+#include "ztxdiag/http.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -13,6 +14,7 @@ constexpr int exit_ok = 0;
 constexpr int exit_usage = 2;
 constexpr int exit_dns_failure = 3;
 constexpr int exit_tcp_failure = 4;
+constexpr int exit_http_failure = 5;
 
 struct CommonOptions {
     bool json{false};
@@ -22,22 +24,28 @@ struct CommonOptions {
 void print_usage()
 {
     std::cout
-        << "ztxdiag - cross-platform network diagnostic CLI\n\n"
+        << "ztxdiag 0.2 - cross-platform network diagnostic CLI\n\n"
         << "Usage:\n"
         << "  ztxdiag <host> <port> [--timeout <ms>] [--json]\n"
         << "  ztxdiag check <host> <port> [--timeout <ms>] [--json]\n"
         << "  ztxdiag dns <host> [--json]\n"
         << "  ztxdiag tcp <host> <port> [--timeout <ms>] [--json]\n"
+        << "  ztxdiag http <url> [--timeout <ms>] [--json]\n"
         << "  ztxdiag env [--json]\n"
+        << "  ztxdiag --version\n"
         << "  ztxdiag --help\n\n"
         << "Examples:\n"
         << "  ztxdiag github.com 443\n"
         << "  ztxdiag dns github.com\n"
         << "  ztxdiag tcp github.com 443 --timeout 2000\n"
+        << "  ztxdiag http https://api.github.com --timeout 5000\n"
+        << "  ztxdiag http https://api.github.com --json\n"
         << "  ztxdiag env --json\n";
 }
 
-bool parse_timeout(const std::string& value, std::chrono::milliseconds& timeout)
+bool parse_timeout(
+    const std::string& value,
+    std::chrono::milliseconds& timeout)
 {
     try {
         std::size_t consumed = 0;
@@ -111,7 +119,8 @@ int run_tcp(
         return exit_usage;
     }
 
-    const auto result = ztxdiag::check_tcp(host, port, options.timeout);
+    const auto result =
+        ztxdiag::check_tcp(host, port, options.timeout);
 
     std::cout << (options.json
                       ? ztxdiag::format_tcp_json(result)
@@ -119,6 +128,21 @@ int run_tcp(
               << '\n';
 
     return result.success ? exit_ok : exit_tcp_failure;
+}
+
+int run_http(
+    const std::string& url,
+    const CommonOptions& options)
+{
+    const auto result =
+        ztxdiag::check_http(url, options.timeout);
+
+    std::cout << (options.json
+                      ? ztxdiag::format_http_json(result)
+                      : ztxdiag::format_http_text(result))
+              << '\n';
+
+    return result.success ? exit_ok : exit_http_failure;
 }
 
 int run_check(
@@ -133,7 +157,8 @@ int run_check(
     }
 
     const auto dns = ztxdiag::resolve_dns(host);
-    const auto tcp = ztxdiag::check_tcp(host, port, options.timeout);
+    const auto tcp =
+        ztxdiag::check_tcp(host, port, options.timeout);
     const auto env = ztxdiag::inspect_environment();
 
     std::cout << (options.json
@@ -164,6 +189,11 @@ int main(int argc, char* argv[])
         return args.empty() ? exit_usage : exit_ok;
     }
 
+    if (args[0] == "--version") {
+        std::cout << "ztxdiag 0.2.0\n";
+        return exit_ok;
+    }
+
     CommonOptions options;
     std::string error;
 
@@ -174,10 +204,12 @@ int main(int argc, char* argv[])
         }
 
         const auto result = ztxdiag::inspect_environment();
+
         std::cout << (options.json
                           ? ztxdiag::format_environment_json(result)
                           : ztxdiag::format_environment_text(result))
                   << '\n';
+
         return exit_ok;
     }
 
@@ -209,6 +241,22 @@ int main(int argc, char* argv[])
         return run_tcp(args[1], args[2], options);
     }
 
+    if (args[0] == "http") {
+        if (args.size() < 2) {
+            print_usage();
+            return exit_usage;
+        }
+
+        options.timeout = std::chrono::milliseconds{5000};
+
+        if (!parse_common_options(args, 2, options, error)) {
+            std::cerr << error << '\n';
+            return exit_usage;
+        }
+
+        return run_http(args[1], options);
+    }
+
     if (args[0] == "check") {
         if (args.size() < 3) {
             print_usage();
@@ -223,7 +271,6 @@ int main(int argc, char* argv[])
         return run_check(args[1], args[2], options);
     }
 
-    // Convenience form: ztxdiag <host> <port> ...
     if (args.size() >= 2 && args[0].rfind("--", 0) != 0) {
         if (!parse_common_options(args, 2, options, error)) {
             std::cerr << error << '\n';

@@ -1,124 +1,87 @@
 # network-diagnostic-cli
 
-**`ztxdiag`** is a small cross-platform C++20 command-line tool for first-line network diagnosis.
+[![CI](https://github.com/ztxdev/network-diagnostic-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/ztxdev/network-diagnostic-cli/actions/workflows/ci.yml)
 
-It is intended for the situations engineers see repeatedly:
+**`ztxdiag`** is a cross-platform C++20 command-line tool for first-line network and HTTP/HTTPS diagnosis.
 
-- "The host can be pinged, but the application cannot connect."
-- "It works on one PC but not another."
-- "DNS resolves differently across machines."
-- "Port 443 is unreachable."
-- "A proxy or VPN may be changing the path."
-- "We need a machine-readable diagnostic result for support or automation."
+## V0.2
 
-The V0.1 baseline deliberately focuses on diagnostics that do not require administrator/root privileges.
-
----
-
-## Current Features
+V0.2 adds application-layer diagnostics:
 
 - DNS resolution
-- IPv4 / IPv6 address reporting
-- TCP connection checks
-- TCP connect latency
-- Configurable connection timeout
-- Local hostname and address inspection
-- HTTP / HTTPS proxy environment inspection
-- Human-readable text output
-- JSON output
-- Windows / MSVC support
-- Linux / GCC support
-- Linux / Clang support
-- CTest + GitHub Actions CI
+- TCP connectivity and connect latency
+- HTTP / HTTPS response checks
+- HTTP status
+- effective URL / redirect detection
+- HTTP protocol version
+- DNS / TCP / TLS / TTFB / total timing where the platform backend exposes it
+- proxy environment hints
+- text and JSON output
 
----
+### HTTP / HTTPS example
 
-## Examples
+```text
+ztxdiag http https://api.github.com
+```
 
-### One-command diagnostic
+Typical Linux output:
+
+```text
+HTTP/HTTPS
+  URL: https://api.github.com
+  OK   response received
+  status: 200
+  protocol: HTTP/2
+  effective URL: https://api.github.com/
+  remote address: 140.82.x.x
+  redirected: yes
+  TLS backend: libcurl/TLS backend
+  proxy hint: (not set)
+
+TIMING
+  DNS: 8 ms
+  TCP: 35 ms
+  TLS: 52 ms
+  TTFB: 124 ms
+  total: 124 ms
+```
+
+Windows uses native **WinHTTP + Schannel** and therefore requires no extra HTTP/TLS development package.
+
+Linux uses **libcurl**.
+
+> Windows WinHTTP validates TLS through Schannel, but V0.2 intentionally reports exact standalone TLS-handshake time as `n/a` because the synchronous WinHTTP API path does not expose that metric directly. The tool does not invent timing data.
+
+## Commands
 
 ```text
 ztxdiag github.com 443
-```
-
-Example output:
-
-```text
-ZTXDIAG
-=======
-
-DNS
-  OK   140.82.112.4
-
-TCP
-  OK   connected
-  address: 140.82.112.4
-  port: 443
-  latency: 42 ms
-
-ENVIRONMENT
-  hostname: WORKSTATION
-  IPv4 stack: available
-  IPv6 stack: available
-  HTTP_PROXY: (not set)
-  HTTPS_PROXY: http://127.0.0.1:7890
-  NO_PROXY: (not set)
-
-RESULT
-  PASS
-```
-
-### DNS only
-
-```text
 ztxdiag dns github.com
-```
-
-### TCP / port check
-
-```text
-ztxdiag tcp github.com 443
-```
-
-With a 2-second timeout:
-
-```text
 ztxdiag tcp github.com 443 --timeout 2000
-```
-
-### Environment
-
-```text
+ztxdiag http https://api.github.com
+ztxdiag http https://api.github.com --json
 ztxdiag env
+ztxdiag --version
 ```
-
-### JSON
-
-```text
-ztxdiag github.com 443 --json
-```
-
-JSON output is suitable for scripts, support tooling, and later integration with monitoring systems.
-
----
 
 ## Exit Codes
 
 | Code | Meaning |
 |---:|---|
-| 0 | Diagnostic succeeded |
+| 0 | Diagnostic transport succeeded |
 | 2 | Invalid command or arguments |
 | 3 | DNS resolution failed |
 | 4 | TCP connection failed |
+| 5 | HTTP/HTTPS transport or TLS failed |
 
-This makes the CLI useful in scripts and CI jobs.
+An HTTP 404/500 still proves that the HTTP transport path worked, so the command exits 0 when a valid HTTP response is received.
 
----
+## Build — Windows / MSVC
 
-## Build on Windows / MSVC
+No additional HTTP library is required.
 
 ```powershell
-cmake -S . -B build -A x64
+cmake -S . -B build -A x64 -DZTXDIAG_WARNINGS_AS_ERRORS=ON
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
@@ -126,15 +89,21 @@ ctest --test-dir build -C Release --output-on-failure
 Run:
 
 ```powershell
-.\build\Release\ztxdiag.exe github.com 443
+.\build\Release\ztxdiag.exe http https://github.com
 ```
 
----
+## Build — Linux
 
-## Build on Linux
+Install libcurl development headers and pkg-config:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+sudo apt-get install pkg-config libcurl4-openssl-dev
+```
+
+Build:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DZTXDIAG_WARNINGS_AS_ERRORS=ON
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
@@ -142,104 +111,58 @@ ctest --test-dir build --output-on-failure
 Run:
 
 ```bash
-./build/ztxdiag github.com 443
+./build/ztxdiag http https://github.com
 ```
 
----
+## Backends
 
-## Why TCP latency instead of ping?
+| Platform | HTTP/TLS backend |
+|---|---|
+| Windows | WinHTTP + Schannel |
+| Linux | libcurl + system TLS backend |
 
-ICMP echo can be blocked, filtered, rate-limited, or require elevated privileges on some systems.
+This avoids custom TLS code.
 
-`ztxdiag` measures the time required to establish the actual TCP connection to the target service.
-
-For application troubleshooting, this is frequently more useful than ICMP reachability alone.
-
----
-
-## Diagnostic Model
-
-`ztxdiag` treats a connectivity problem as layers:
+## Diagnostic model
 
 ```text
-Name
-  ↓
-DNS resolution
-  ↓
-IP address
-  ↓
-TCP connect
-  ↓
-Service port
-  ↓
-Application protocol
+URL
+ ↓
+DNS
+ ↓
+TCP
+ ↓
+TLS
+ ↓
+HTTP
+ ↓
+Status / redirect / timing
 ```
-
-V0.1 covers the first four layers plus the local proxy/network environment.
-
----
-
-## Roadmap
-
-### V0.2 — HTTP / HTTPS diagnostics
-
-Planned:
-
-```text
-ztxdiag http https://api.github.com
-```
-
-Target data:
-
-- HTTP status
-- DNS time
-- connect time
-- TLS time
-- first-byte time
-- total time
-- redirect target
-- certificate / TLS error
-- proxy usage
-
-HTTP/HTTPS support will use a mature TLS-capable networking library rather than custom TLS code.
-
-### V0.3
-
-- Batch targets
-- Output to diagnostic report file
-- Config file
-- Retry policy
-- Optional traceroute/path information
-- Release binaries for Windows and Linux
-
----
-
-## Intended Use
-
-- Remote technical support
-- Developer troubleshooting
-- Industrial software deployment
-- MES / WMS / equipment connectivity diagnosis
-- CI connectivity checks
-- Customer environment collection
-- First-line support automation
-
----
 
 ## Security
 
-`ztxdiag` does not require credentials for the V0.1 commands.
+Do not publish raw diagnostic output without reviewing:
 
-When sharing output publicly, still review:
+- internal hostnames
+- private IP addresses
+- proxy endpoints
+- customer URLs
+- query strings
+- credentials or tokens
 
-- hostnames
-- internal IP addresses
-- proxy addresses
-- local machine names
+Credentials embedded in URLs are rejected.
 
-before posting diagnostic data.
+## Next
 
----
+V0.3 candidates:
+
+- release binaries
+- batch targets
+- report files
+- configurable redaction
+- retry policy
+- certificate details
+- path / traceroute diagnostics
 
 ## Maintainer
 
@@ -247,11 +170,9 @@ before posting diagnostic data.
 
 C++ · CMake · Linux · Windows · Networking · Industrial Software
 
-Technical diagnostic requests:
+Professional diagnostic requests:
 
 https://github.com/ztxdev/software-diagnostic-checklist/issues/new/choose
-
----
 
 ## License
 

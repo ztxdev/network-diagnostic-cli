@@ -7,7 +7,6 @@
 #include <cstring>
 #include <limits>
 #include <set>
-#include <sstream>
 #include <string>
 
 #if defined(_WIN32)
@@ -63,10 +62,7 @@ public:
     SocketRuntime(const SocketRuntime&) = delete;
     SocketRuntime& operator=(const SocketRuntime&) = delete;
 
-    [[nodiscard]] bool ok() const noexcept
-    {
-        return ok_;
-    }
+    [[nodiscard]] bool ok() const noexcept { return ok_; }
 
 private:
     bool ok_{false};
@@ -76,18 +72,10 @@ class SocketGuard {
 public:
     explicit SocketGuard(SocketHandle socket) : socket_(socket) {}
 
-    ~SocketGuard()
-    {
-        close();
-    }
+    ~SocketGuard() { close(); }
 
     SocketGuard(const SocketGuard&) = delete;
     SocketGuard& operator=(const SocketGuard&) = delete;
-
-    [[nodiscard]] SocketHandle get() const noexcept
-    {
-        return socket_;
-    }
 
     void close() noexcept
     {
@@ -122,7 +110,8 @@ std::string gai_error_text(int code)
     return "getaddrinfo error " + std::to_string(code);
 #else
     const char* text = gai_strerror(code);
-    return text != nullptr ? std::string{text} : "getaddrinfo error " + std::to_string(code);
+    return text != nullptr ? std::string{text}
+                           : "getaddrinfo error " + std::to_string(code);
 #endif
 }
 
@@ -144,7 +133,8 @@ bool is_connect_in_progress()
 {
 #if defined(_WIN32)
     const int error = WSAGetLastError();
-    return error == WSAEWOULDBLOCK || error == WSAEINPROGRESS || error == WSAEINVAL;
+    return error == WSAEWOULDBLOCK || error == WSAEINPROGRESS ||
+           error == WSAEINVAL;
 #else
     return errno == EINPROGRESS || errno == EWOULDBLOCK;
 #endif
@@ -222,7 +212,9 @@ bool socket_family_available(int family)
     return true;
 }
 
-std::vector<std::string> resolve_addresses(const std::string& host, std::string& error)
+std::vector<std::string> resolve_addresses(
+    const std::string& host,
+    std::string& error)
 {
     addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
@@ -303,7 +295,8 @@ TcpResult check_tcp(
 
     addrinfo* raw = nullptr;
     const std::string service = std::to_string(port);
-    const int resolve_result = getaddrinfo(host.c_str(), service.c_str(), &hints, &raw);
+    const int resolve_result =
+        getaddrinfo(host.c_str(), service.c_str(), &hints, &raw);
 
     if (resolve_result != 0) {
         result.error = gai_error_text(resolve_result);
@@ -314,7 +307,8 @@ TcpResult check_tcp(
 
     for (addrinfo* current = raw; current != nullptr; current = current->ai_next) {
         const SocketHandle socket =
-            ::socket(current->ai_family, current->ai_socktype, current->ai_protocol);
+            ::socket(current->ai_family, current->ai_socktype,
+                     current->ai_protocol);
 
         if (socket == invalid_socket) {
             last_error = socket_error_text();
@@ -324,13 +318,15 @@ TcpResult check_tcp(
         SocketGuard guard{socket};
 
         if (!set_nonblocking(socket)) {
-            last_error = "failed to enable non-blocking mode: " + socket_error_text();
+            last_error =
+                "failed to enable non-blocking mode: " + socket_error_text();
             continue;
         }
 
         const auto started = std::chrono::steady_clock::now();
         const int connect_result =
-            ::connect(socket, current->ai_addr, static_cast<int>(current->ai_addrlen));
+            ::connect(socket, current->ai_addr,
+                      static_cast<int>(current->ai_addrlen));
 
         if (connect_result != 0 && !is_connect_in_progress()) {
             last_error = socket_error_text();
@@ -343,14 +339,17 @@ TcpResult check_tcp(
             FD_SET(socket, &write_set);
 
             timeval tv{};
-            const auto timeout_ms = std::max<std::int64_t>(0, timeout.count());
+            const auto timeout_ms =
+                std::max<std::int64_t>(0, timeout.count());
             tv.tv_sec = static_cast<long>(timeout_ms / 1000);
             tv.tv_usec = static_cast<long>((timeout_ms % 1000) * 1000);
 
 #if defined(_WIN32)
-            const int select_result = select(0, nullptr, &write_set, nullptr, &tv);
+            const int select_result =
+                select(0, nullptr, &write_set, nullptr, &tv);
 #else
-            const int select_result = select(socket + 1, nullptr, &write_set, nullptr, &tv);
+            const int select_result =
+                select(socket + 1, nullptr, &write_set, nullptr, &tv);
 #endif
 
             if (select_result == 0) {
@@ -367,16 +366,20 @@ TcpResult check_tcp(
 #if defined(_WIN32)
             int option_length = static_cast<int>(sizeof(socket_error));
 #else
-            socklen_t option_length = static_cast<socklen_t>(sizeof(socket_error));
+            socklen_t option_length =
+                static_cast<socklen_t>(sizeof(socket_error));
 #endif
 
-            if (getsockopt(socket, SOL_SOCKET, SO_ERROR,
+            if (getsockopt(
+                    socket,
+                    SOL_SOCKET,
+                    SO_ERROR,
 #if defined(_WIN32)
-                           reinterpret_cast<char*>(&socket_error),
+                    reinterpret_cast<char*>(&socket_error),
 #else
-                           &socket_error,
+                    &socket_error,
 #endif
-                           &option_length) != 0) {
+                    &option_length) != 0) {
                 last_error = "getsockopt failed: " + socket_error_text();
                 continue;
             }
@@ -392,10 +395,12 @@ TcpResult check_tcp(
         }
 
         const auto ended = std::chrono::steady_clock::now();
+
         result.success = true;
         result.connected_address = sockaddr_to_text(current->ai_addr);
         result.latency =
-            std::chrono::duration_cast<std::chrono::milliseconds>(ended - started);
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                ended - started);
         result.error.clear();
         break;
     }
@@ -419,12 +424,15 @@ EnvironmentResult inspect_environment()
     }
 
     std::array<char, 256> host_buffer{};
-    if (gethostname(host_buffer.data(), static_cast<int>(host_buffer.size())) == 0) {
+    if (gethostname(
+            host_buffer.data(),
+            static_cast<int>(host_buffer.size())) == 0) {
         host_buffer.back() = '\0';
         result.hostname = host_buffer.data();
 
         std::string error;
-        result.local_addresses = resolve_addresses(result.hostname, error);
+        result.local_addresses =
+            resolve_addresses(result.hostname, error);
     }
 
     result.ipv4_stack = socket_family_available(AF_INET);

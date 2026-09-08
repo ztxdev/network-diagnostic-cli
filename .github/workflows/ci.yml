@@ -20,6 +20,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install HTTP backend
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libcurl4-openssl-dev
+
       - name: Select compiler
         shell: bash
         run: |
@@ -40,8 +43,11 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
-      - name: Smoke test
+      - name: DNS smoke test
         run: ./build/ztxdiag dns localhost
+
+      - name: HTTPS smoke test
+        run: ./build/ztxdiag http https://github.com --timeout 10000
 
   windows:
     name: Windows / MSVC
@@ -60,5 +66,8 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
-      - name: Smoke test
+      - name: DNS smoke test
         run: .\build\Release\ztxdiag.exe dns localhost
+
+      - name: HTTPS smoke test
+        run: .\build\Release\ztxdiag.exe http https://github.com --timeout 10000
